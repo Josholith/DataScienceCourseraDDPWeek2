@@ -1,0 +1,74 @@
+---
+title: "Developing Data Products Week 2 Assignment"
+author: "Joshua Huber"
+date: "May 26, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+set.seed(12345)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Problem Statement
+We would like to display an interactive [choropleth map](https://en.wikipedia.org/wiki/Choropleth_map) showing the counties of the state of New York and how many hate crimes are reported in each county during the most recent year reported (currently 2016).
+
+## Data acquisition
+We start by getting two data sets from two different government sites. We will join these data sets together after some processing.
+
+1. Data on hate crimes reported in the counties of the state of New York, US.
+```{r}
+if(!file.exists("ny_hate_crimes_2016.csv")){
+    download.file(  "https://data.ny.gov/api/views/6xda-q7ev/rows.csv?accessType=DOWNLOAD"
+                  , "ny_hate_crimes_2016.csv")
+}
+```
+2. Geospatial data on the counties of New York, so we can represent the polygons.
+```{r}
+if(!file.exists("gz_2010_us_050_00_500k.json")){
+    download.file(  "http://eric.clst.org/assets/wiki/uploads/Stuff/gz_2010_us_050_00_500k.json"
+                  , "gz_2010_us_050_00_500k.json")
+}
+```
+
+## Processing
+We subset the data. We will keep only the data from year 2016 and are only looking at the total number of hate crime incidents (column 42) in New York state (state number 36).  As there may be multiple rows per county, we `aggregate` them together.
+```{r}
+hate_crimes <- read.csv('ny_hate_crimes_2016.csv')
+hate_crimes <- hate_crimes[hate_crimes$Year==2016, c(1,42)]
+hate_crimes <- aggregate(Total.Incidents ~ County, hate_crimes, sum)
+
+library(rgdal)
+counties <- readOGR("gz_2010_us_050_00_500k.json")
+ny <- counties[counties$STATE==36, ]
+```
+
+We merge the two dataframes together. Data wise, this is a left outer join.  Any counties that did not have any hate crimes reported will have their NA replaced by 0 so that we don't get gray counties on the choropleth.
+```{r}
+ny_hate_crimes <- merge(x = ny, y = hate_crimes, by.x = "NAME", by.y = "County", all.x = TRUE)
+ny_hate_crimes$Total.Incidents[is.na(ny_hate_crimes$Total.Incidents)] <- 0
+```
+
+## Interactive Map
+We choose an appropriate red palette and choose sensible bin split points based on some exploratory analysis.
+
+```{r}
+bins <- c(0, 1, 5, 30, 100, 200)
+pal <- colorBin("Reds", domain = ny_hate_crimes$Total.Incidents, bins = bins)
+
+library(leaflet)
+leaflet(ny_hate_crimes) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~pal(ny_hate_crimes$Total.Incidents),
+    label = paste0(ny_hate_crimes$NAME, ': ', ny_hate_crimes$Total.Incidents),
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.8
+    ) %>%
+  addLegend("bottomleft", pal = pal, values = ~Total.Incidents,
+    title = "Hate crimes reported (2016)"
+  )
+```
