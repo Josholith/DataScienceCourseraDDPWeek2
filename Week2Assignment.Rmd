@@ -69,6 +69,7 @@ leaflet(ny_hate_crimes) %>%
     fillOpacity = 0.8
     ) %>%
   addLegend("bottomleft", pal = pal, values = ~Total.Incidents,
-    title = "Hate crimes reported (2016)"
+    title = "Hate crimes reported (2016)",
+    opacity = 0.9
   )
 ```
